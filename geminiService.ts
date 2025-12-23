@@ -6,6 +6,7 @@ export const runCognitiveAnalysis = async (
   scenario: ScenarioBundle,
   counterfactuals: Counterfactuals
 ): Promise<{ text: string; summary: RiskSummary }> => {
+  // Initialize SDK inside the analysis call to ensure fresh API key context
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   const envData = JSON.stringify(scenario.environment);
@@ -20,22 +21,11 @@ export const runCognitiveAnalysis = async (
     - REMOVE URGENCY CUES: ${counterfactuals.removeUrgencyCues ? 'ACTIVE (Hypothesize a removal of high-urgency visual flags and time-pressure language)' : 'INACTIVE'}
   `;
 
-  const prompt = `
+  // System instruction defining the persona and behavioral constraints
+  const systemInstruction = `
     You are the "Cognitive Threat Modeling Assistant (CTMA)".
     Your purpose is to analyze cybersecurity telemetry through the lens of cognitive science.
     Treat human cognition as the primary attack surface.
-
-    [SIMULATION DATA BUNDLE]
-    Scenario Name: ${scenario.title}
-    Environment Context: ${envData}
-    Active Stimuli: ${stimuliData}
-    Telemetry Streams:
-    - Cognitive Snapshots: ${cognitiveLogs}
-    - Environment/System Events: ${envLogs}
-    - Interaction/User Behavior: ${interactionLogs}
-
-    [COUNTERFACTUAL CONTEXT]
-    ${counterfactualContext}
 
     [OUTPUT REQUIREMENTS]
     You must return two distinct parts separated by the token "===REPORT_START===".
@@ -65,16 +55,34 @@ export const runCognitiveAnalysis = async (
     - Conclude with "REASONING LOGIC: [Explain the cognitive science principles applied in this session]".
   `;
 
+  // Prompt containing specific simulation data
+  const prompt = `
+    [SIMULATION DATA BUNDLE]
+    Scenario Name: ${scenario.title}
+    Environment Context: ${envData}
+    Active Stimuli: ${stimuliData}
+    Telemetry Streams:
+    - Cognitive Snapshots: ${cognitiveLogs}
+    - Environment/System Events: ${envLogs}
+    - Interaction/User Behavior: ${interactionLogs}
+
+    [COUNTERFACTUAL CONTEXT]
+    ${counterfactualContext}
+  `;
+
   try {
+    // Calling generateContent with Gemini 3 Pro for complex reasoning task
     const response = await ai.models.generateContent({
       model: 'gemini-3-pro-preview',
       contents: prompt,
       config: {
+        systemInstruction: systemInstruction,
         temperature: 0.1,
         topP: 0.95,
       }
     });
 
+    // Access .text property directly
     const fullText = response.text || "";
     let summary: RiskSummary = { level: scenario.expected_risk_level, failureMode: "Processing...", mechanism: "Analysis Pending..." };
     let narrative = "";
